@@ -2,8 +2,8 @@
 
 importer="texture"
 type="StreamTexture"
-path.s3tc="res://.import/ground_alb_bump.png-bb4a71c2fbf22e4d7ea294c79982d7ea.s3tc.stex"
-path.etc2="res://.import/ground_alb_bump.png-bb4a71c2fbf22e4d7ea294c79982d7ea.etc2.stex"
+path.s3tc="res://.import/small_rocks_nor_rough.png-f129660e51c250327f8d9c2376344216.s3tc.stex"
+path.etc2="res://.import/small_rocks_nor_rough.png-f129660e51c250327f8d9c2376344216.etc2.stex"
 metadata={
 "imported_formats": [ "s3tc", "etc2" ],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://assets/terrain_textures/small_rocks/ground_alb_bump.png"
-dest_files=[ "res://.import/ground_alb_bump.png-bb4a71c2fbf22e4d7ea294c79982d7ea.s3tc.stex", "res://.import/ground_alb_bump.png-bb4a71c2fbf22e4d7ea294c79982d7ea.etc2.stex" ]
+source_file="res://assets/terrain_textures/small_rocks/small_rocks_nor_rough.png"
+dest_files=[ "res://.import/small_rocks_nor_rough.png-f129660e51c250327f8d9c2376344216.s3tc.stex", "res://.import/small_rocks_nor_rough.png-f129660e51c250327f8d9c2376344216.etc2.stex" ]
 
 [params]
 
@@ -25,7 +25,7 @@ flags/repeat=true
 flags/filter=true
 flags/mipmaps=true
 flags/anisotropic=false
-flags/srgb=1
+flags/srgb=2
 process/fix_alpha_border=true
 process/premult_alpha=false
 process/HDR_as_SRGB=false
