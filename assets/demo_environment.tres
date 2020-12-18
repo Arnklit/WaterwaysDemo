@@ -1,0 +1,21 @@
+[gd_resource type="Environment" load_steps=2 format=2]
+
+[sub_resource type="ProceduralSky" id=1]
+sky_energy = 0.5
+
+[resource]
+background_mode = 2
+background_sky = SubResource( 1 )
+background_sky_orientation = Basis( 0.819152, 0, 0.573577, 0, 1, 0, -0.573577, 0, 0.819152 )
+fog_enabled = true
+fog_sun_color = Color( 1, 0.835294, 0.588235, 1 )
+fog_sun_amount = 1.0
+fog_depth_curve = 2.46229
+fog_transmit_enabled = true
+tonemap_mode = 2
+ssao_enabled = true
+ssao_radius2 = 0.25
+ssao_ao_channel_affect = 1.0
+glow_levels/1 = true
+glow_levels/2 = true
+glow_levels/4 = true

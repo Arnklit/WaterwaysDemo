@@ -1,0 +1,34 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=2]
+
+[ext_resource path="res://assets/textures/cliff/cliff_orm.png" type="Texture" id=1]
+[ext_resource path="res://assets/textures/cliff/cliff_albedo.jpg" type="Texture" id=2]
+[ext_resource path="res://assets/textures/cliff/cliff_nor.png" type="Texture" id=3]
+[ext_resource path="res://assets/shaders/wet_cliff.shader" type="Shader" id=4]
+
+
+
+[resource]
+resource_local_to_scene = true
+shader = ExtResource( 4 )
+shader_param/albedo = Color( 1, 1, 1, 1 )
+shader_param/specular = 0.5
+shader_param/metallic = 0.0
+shader_param/roughness = 1.0
+shader_param/point_size = 1.0
+shader_param/roughness_texture_channel = Plane( 0, 1, 0, 0 )
+shader_param/normal_scale = 1.0
+shader_param/ao_texture_channel = Plane( 1, 0, 0, 0 )
+shader_param/ao_light_affect = 0.0
+shader_param/depth_scale = null
+shader_param/depth_min_layers = null
+shader_param/depth_max_layers = null
+shader_param/depth_flip = null
+shader_param/uv1_blend_sharpness = 1.0
+shader_param/uv1_scale = Vector3( 0.25, 0.25, 0.25 )
+shader_param/uv1_offset = Vector3( 0, 0, 0 )
+shader_param/water_height = 0.0
+shader_param/wetness_transition_width = 0.5
+shader_param/texture_albedo = ExtResource( 2 )
+shader_param/texture_roughness = ExtResource( 1 )
+shader_param/texture_normal = ExtResource( 3 )
+shader_param/texture_ambient_occlusion = ExtResource( 1 )
