@@ -26,7 +26,8 @@ _global_script_class_icons={
 
 [application]
 
-config/name="RiverToolDemo"
+config/name="WaterwaysDemo"
+config/description="Demo project for Waterways add-on."
 run/main_scene="res://Demo.tscn"
 config/icon="res://icon.png"
 
