@@ -18,17 +18,22 @@ const DEFAULT_PARAMETERS = {
 	shape_step_width_divs = 1,
 	shape_smoothness = 0.5,
 	mat_flow_speed = 1.0,
-	mat_tiling = 1.0,
+	mat_steepness_multiplier = 2.0,
+	mat_uv_tiling = Vector2(1.0, 1.0),
 	mat_normal_scale = 1.0,
 	mat_clarity = 10.0,
+	mat_edge_fade = 0.25,
 	mat_albedo = Color(0.3, 0.25, 0.2, 1.0),
 	mat_roughness = 0.2,
 	mat_refraction = 0.05,
 	mat_foam_albedo = Color(0.9, 0.9, 0.9, 1.0),
 	mat_foam_amount = 2.0,
-	mat_foam_smoothness = 1.0,
+	mat_foam_steepness = 2.0,
+	mat_foam_smoothness = 0.3,
+	mat_custom_shader = null,
 	lod_lod0_distance = 50.0,
-	baking_resolution = 2,
+	baking_resolution = 2, 
+	baking_raycast_distance = 10.0,
 	baking_dilate = 0.6,
 	baking_flowmap_blur = 0.04,
 	baking_foam_cutoff = 0.9,
@@ -43,22 +48,27 @@ var shape_smoothness := 0.5 setget set_smoothness
 
 # Material Properties
 var mat_flow_speed := 1.0 setget set_flowspeed
+var mat_steepness_multiplier := 2.0 setget set_steepness_multiplier
 var mat_texture : Texture setget set_texture
-var mat_tiling := 1.0 setget set_tiling
+var mat_uv_scale := Vector3(1.0, 1.0, 1.0) setget set_uv_scale
 var mat_normal_scale := 1.0 setget set_normal_scale
 var mat_clarity := 10.0 setget set_clarity
+var mat_edge_fade := 0.25 setget set_edge_fade
 var mat_albedo := Color(0.3, 0.25, 0.2, 1.0) setget set_albedo
 var mat_roughness := 0.2 setget set_roughness
 var mat_refraction := 0.05 setget set_refraction
 var mat_foam_albedo := Color(0.9, 0.9, 0.9, 1.0) setget set_foam_albedo
 var mat_foam_amount := 2.0 setget set_foam_amount
-var mat_foam_smoothness := 1.0 setget set_foam_smoothness
+var mat_foam_steepness := 2.0 setget set_foam_steepness
+var mat_foam_smoothness := 0.3 setget set_foam_smoothness
+var mat_custom_shader : Shader setget set_custom_shader
 
 # LOD Properties
 var lod_lod0_distance := 50.0 setget set_lod0_distance
 
 # Bake Properties
 var baking_resolution := 2
+var baking_raycast_distance := 10.0
 var baking_dilate := 0.6
 var baking_flowmap_blur := 0.04
 var baking_foam_cutoff := 0.9
@@ -133,6 +143,13 @@ func _get_property_list() -> Array:
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
+			name = "mat_steepness_multiplier",
+			type = TYPE_REAL,
+			hint = PROPERTY_HINT_RANGE,
+			hint_string = "1.0, 8.0",
+			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
 			name = "mat_texture",
 			type = TYPE_OBJECT,
 			hint = PROPERTY_HINT_RESOURCE_TYPE,
@@ -140,10 +157,9 @@ func _get_property_list() -> Array:
 			hint_string = "Texture"
 		},
 		{
-			name = "mat_tiling",
-			type = TYPE_REAL,
-			hint = PROPERTY_HINT_RANGE,
-			hint_string = "1.0, 20.0",
+			name = "mat_uv_scale",
+			type = TYPE_VECTOR3,
+			hint = PROPERTY_HINT_NONE,
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
@@ -167,6 +183,13 @@ func _get_property_list() -> Array:
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
+			name = "mat_edge_fade",
+			type = TYPE_REAL,
+			hint = PROPERTY_HINT_RANGE,
+			hint_string = "0.0, 1.0",
+			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
 			name = "mat_roughness",
 			type = TYPE_REAL,
 			hint = PROPERTY_HINT_RANGE,
@@ -179,6 +202,12 @@ func _get_property_list() -> Array:
 			hint = PROPERTY_HINT_RANGE,
 			hint_string = "-1.0, 1.0",
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
+			name = "Material/Foam",
+			type = TYPE_NIL,
+			hint_string = "mat_foam_",
+			usage = PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
 			name = "mat_foam_albedo",
@@ -194,11 +223,25 @@ func _get_property_list() -> Array:
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
+			name = "mat_foam_steepness",
+			type = TYPE_REAL,
+			hint = PROPERTY_HINT_RANGE,
+			hint_string = "0.0, 8.0",
+			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
 			name = "mat_foam_smoothness",
 			type = TYPE_REAL,
 			hint = PROPERTY_HINT_RANGE,
 			hint_string = "0.0, 1.0",
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
+			name = "mat_custom_shader",
+			type = TYPE_OBJECT,
+			hint = PROPERTY_HINT_RESOURCE_TYPE,
+			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE,
+			hint_string = "Shader"
 		},
 		{
 			name = "Lod",
@@ -227,10 +270,10 @@ func _get_property_list() -> Array:
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
-			name = "baking_dilate",
+			name = "baking_raycast_distance",
 			type = TYPE_REAL,
 			hint = PROPERTY_HINT_RANGE,
-			hint_string = "0.0, 2.0",
+			hint_string = "0.0, 100.0",
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
@@ -494,9 +537,29 @@ func set_foam_amount(amount : float) -> void:
 	set_materials("foam_amount", amount)
 
 
+func set_foam_steepness(amount : float) -> void:
+	mat_foam_steepness = amount
+	set_materials("foam_steepness", amount)
+
+
 func set_foam_smoothness(amount : float) -> void:
 	mat_foam_smoothness = amount
 	set_materials("foam_smoothness", amount)
+
+
+func set_custom_shader(shader : Shader) -> void:
+	if mat_custom_shader == shader:
+		return
+	mat_custom_shader = shader
+	if mat_custom_shader == null:
+		_material.shader = load(DEFAULT_SHADER_PATH)
+	else:
+		_material.shader = mat_custom_shader
+		
+		if Engine.editor_hint:
+			# Ability to fork default shader
+			if shader.code == "":
+				shader.code = _default_shader.code
 
 
 func set_roughness(value : float) -> void:
@@ -514,9 +577,9 @@ func set_texture(texture : Texture) -> void:
 	set_materials("texture_water", texture)
 
 
-func set_tiling(value : float) -> void:
-	mat_tiling = value
-	set_materials("uv_tiling", value)
+func set_uv_scale(value : Vector3) -> void:
+	mat_uv_scale = value
+	set_materials("uv_scale", value)
 
 
 func set_normal_scale(value : float) -> void:
@@ -529,9 +592,19 @@ func set_clarity(value : float) -> void:
 	set_materials("clarity", value)
 
 
+func set_edge_fade(value : float) -> void:
+	mat_edge_fade = value
+	set_materials("edge_fade", value)
+
+
 func set_flowspeed(value : float) -> void:
 	mat_flow_speed = value
 	set_materials("flow_speed", value)
+
+
+func set_steepness_multiplier(value : float) -> void:
+	mat_steepness_multiplier = value
+	set_materials("steepness_multiplier", value)
 
 
 func set_lod0_distance(value : float) -> void:
@@ -560,7 +633,7 @@ func _generate_flowmap(flowmap_resolution : float) -> void:
 	yield(get_tree(), "idle_frame")
 	
 	image.lock()
-	image = yield(WaterHelperMethods.generate_collisionmap(image, _mesh_instance, _steps, shape_step_length_divs, shape_step_width_divs, self), "completed")
+	image = yield(WaterHelperMethods.generate_collisionmap(image, _mesh_instance, baking_raycast_distance, _steps, shape_step_length_divs, shape_step_width_divs, self), "completed")
 	image.unlock()
 	
 	emit_signal("progress_notified", 0.95, "Applying filters (" + str(flowmap_resolution) + "x" + str(flowmap_resolution) + ")")
