@@ -55,11 +55,12 @@ void vertex() {
 	//float density = 0.5 + 0.5 * sin(4.0*TIME); // test
 	float density = texture(u_terrain_detailmap, map_uv).r;
 	float hash = get_hash(obj_pos.xz);
+	float hash2 = get_hash(obj_pos.zx);
 	
 	if (density > hash) {
 		// Snap model to the terrain
 		float height = texture(u_terrain_heightmap, map_uv).r / cell_coords.y;
-		VERTEX *= u_instance_scale;
+		VERTEX *= mix(u_instance_scale, u_instance_scale * hash2, u_instance_scale_rand);
 		VERTEX.y += height;
 		
 		VERTEX += get_ambient_wind_displacement(UV, hash);
