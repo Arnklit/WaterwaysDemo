@@ -49,9 +49,7 @@ void fragment() {
 	ROUGHNESS = roughness;
 	SPECULAR = specular;
 	TRANSMISSION = vec3(transmission);
-	if (alpha_scissor_threshold > albedo.a * albedo_tex.a) {
-    	discard;
-	}
+	ALPHA = float(alpha_scissor_threshold < albedo.a * albedo_tex.a);
 }
 "
 
