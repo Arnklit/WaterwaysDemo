@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode cull_disabled;
+render_mode depth_draw_alpha_prepass, cull_disabled;
 
 uniform sampler2D u_terrain_heightmap;
 uniform sampler2D u_terrain_detailmap;
@@ -81,11 +81,12 @@ void vertex() {
 
 void fragment() {
 	NORMAL = (INV_CAMERA_MATRIX * (WORLD_MATRIX * vec4(v_normal, 0.0))).xyz;
-	ALPHA_SCISSOR = 0.3;
+	//ALPHA_SCISSOR = 0.3;
 	ROUGHNESS = 0.8;
 
 	vec4 col = texture(u_albedo_alpha, UV);
-	ALPHA = col.a * COLOR.a;// - clamp(1.4 - UV.y, 0.0, 1.0);//* 0.5 + 0.5*cos(2.0*TIME);
+	//ALPHA = col.a * COLOR.a;// - clamp(1.4 - UV.y, 0.0, 1.0);//* 0.5 + 0.5*cos(2.0*TIME);
+	ALPHA = float(col.a * COLOR.a > 0.3);
 	
 	ALBEDO = COLOR.rgb * col.rgb;
 

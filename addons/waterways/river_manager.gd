@@ -1,4 +1,4 @@
-# Copyright © 2020 Kasper Arnklit Frandsen - MIT License
+# Copyright © 2021 Kasper Arnklit Frandsen - MIT License
 # See `LICENSE.md` included in the source distribution for details.
 tool
 extends Spatial
@@ -7,7 +7,7 @@ const WaterHelperMethods = preload("./water_helper_methods.gd")
 
 const DEFAULT_SHADER_PATH = "res://addons/waterways/shaders/river.shader"
 const DEFAULT_WATER_TEXTURE_PATH = "res://addons/waterways/textures/water1.png"
-const FILTER_RENDERER_PATH = "res://addons/waterways/FilterRenderer.tscn"
+const FILTER_RENDERER_PATH = "res://addons/waterways/filter_renderer.tscn"
 const NOISE_TEXTURE_PATH = "res://addons/waterways/textures/noise.png"
 const DEBUG_SHADER_PATH = "res://addons/waterways/shaders/river_debug.shader"
 const DEBUG_PATTERN_PATH = "res://addons/waterways/textures/debug_pattern.png"
@@ -21,7 +21,8 @@ const DEFAULT_PARAMETERS = {
 	mat_normal_scale = 1.0,
 	mat_clarity = 10.0,
 	mat_edge_fade = 0.25,
-	mat_albedo = Color(0.3, 0.25, 0.2, 1.0),
+	mat_albedo = PoolColorArray([Color(0.25, 0.25, 0.70), Color(0.35, 0.25, 0.25)]),
+	mat_gradient_depth = 10.0,
 	mat_roughness = 0.2,
 	mat_refraction = 0.05,
 	mat_flow_speed = 1.0,
@@ -34,15 +35,16 @@ const DEFAULT_PARAMETERS = {
 	mat_foam_amount = 2.0,
 	mat_foam_steepness = 2.0,
 	mat_foam_smoothness = 0.3,
-	mat_custom_shader = null,
 	lod_lod0_distance = 50.0,
 	baking_resolution = 2, 
 	baking_raycast_distance = 10.0,
+	baking_raycast_layers = 1,
 	baking_dilate = 0.6,
 	baking_flowmap_blur = 0.04,
 	baking_foam_cutoff = 0.9,
 	baking_foam_offset = 0.1,
-	baking_foam_blur = 0.02
+	baking_foam_blur = 0.02,
+	adv_custom_shader = null
 }
 
 # Shape Properties
@@ -56,7 +58,8 @@ var mat_uv_scale := Vector3(1.0, 1.0, 1.0) setget set_uv_scale
 var mat_normal_scale := 1.0 setget set_normal_scale
 var mat_clarity := 10.0 setget set_clarity
 var mat_edge_fade := 0.25 setget set_edge_fade
-var mat_albedo := Color(0.3, 0.25, 0.2, 1.0) setget set_albedo
+var mat_albedo := PoolColorArray([Color(0.25, 0.25, 0.70), Color(0.35, 0.25, 0.25)]) setget set_albedo
+var mat_gradient_depth := 10.0 setget set_gradient_depth
 var mat_roughness := 0.2 setget set_roughness
 var mat_refraction := 0.05 setget set_refraction
 var mat_flow_speed := 1.0 setget set_flowspeed
@@ -69,7 +72,6 @@ var mat_foam_albedo := Color(0.9, 0.9, 0.9, 1.0) setget set_foam_albedo
 var mat_foam_amount := 2.0 setget set_foam_amount
 var mat_foam_steepness := 2.0 setget set_foam_steepness
 var mat_foam_smoothness := 0.3 setget set_foam_smoothness
-var mat_custom_shader : Shader setget set_custom_shader
 
 # LOD Properties
 var lod_lod0_distance := 50.0 setget set_lod0_distance
@@ -77,23 +79,27 @@ var lod_lod0_distance := 50.0 setget set_lod0_distance
 # Bake Properties
 var baking_resolution := 2
 var baking_raycast_distance := 10.0
+var baking_raycast_layers := 1
 var baking_dilate := 0.6
 var baking_flowmap_blur := 0.04
 var baking_foam_cutoff := 0.9
 var baking_foam_offset := 0.1
 var baking_foam_blur := 0.02
 
+# Advanced Properties
+var adv_custom_shader : Shader setget set_custom_shader
+
 # Public variables
 var curve : Curve3D
 var widths := [] setget set_widths
 var valid_flowmap := false
 var debug_view := 0 setget set_debug_view
+var mesh_instance : MeshInstance
 
 # Private variables
 var _steps := 2
 var _st : SurfaceTool
 var _mdt : MeshDataTool
-var _mesh_instance : MeshInstance
 var _default_shader : Shader
 var _debug_shader : Shader
 var _material : ShaderMaterial
@@ -103,10 +109,12 @@ var _filter_renderer
 var _flow_foam_noise : Texture
 var _dist_pressure : Texture
 
-# river_chaged used to update handles when values are changed on script side
+# river_changed used to update handles when values are changed on script side
 # progress_notified used to up progress bar when baking maps
+# albedo_set is needed since the gradient is a custom inspector that needs a signal to update from script side
 signal river_changed
 signal progress_notified
+signal albedo_set
 
 # Internal Methods
 func _get_property_list() -> Array:
@@ -166,8 +174,14 @@ func _get_property_list() -> Array:
 		},
 		{
 			name = "mat_albedo",
-			type = TYPE_COLOR,
-			hint = PROPERTY_HINT_COLOR_NO_ALPHA,
+			type = TYPE_COLOR_ARRAY,
+			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
+			name = "mat_gradient_depth",
+			type = TYPE_REAL,
+			hint = PROPERTY_HINT_RANGE,
+			hint_string = "0.0, 200.0",
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
@@ -280,13 +294,6 @@ func _get_property_list() -> Array:
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
-			name = "mat_custom_shader",
-			type = TYPE_OBJECT,
-			hint = PROPERTY_HINT_RESOURCE_TYPE,
-			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE,
-			hint_string = "Shader"
-		},
-		{
 			name = "Lod",
 			type = TYPE_NIL,
 			hint_string = "lod_",
@@ -318,6 +325,19 @@ func _get_property_list() -> Array:
 			hint = PROPERTY_HINT_RANGE,
 			hint_string = "0.0, 100.0",
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},		
+		{
+			name = "baking_raycast_layers",
+			type = TYPE_INT,
+			hint = PROPERTY_HINT_LAYERS_3D_PHYSICS,
+			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
+			name = "baking_dilate",
+			type = TYPE_REAL,
+			hint = PROPERTY_HINT_RANGE,
+			hint_string = "0.0, 1.0",
+			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
 		},
 		{
 			name = "baking_flowmap_blur",
@@ -346,6 +366,19 @@ func _get_property_list() -> Array:
 			hint = PROPERTY_HINT_RANGE,
 			hint_string = "0.0, 1.0",
 			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
+			name = "Advanced",
+			type = TYPE_NIL,
+			hint_string = "adv_",
+			usage = PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SCRIPT_VARIABLE
+		},
+		{
+			name = "adv_custom_shader",
+			type = TYPE_OBJECT,
+			hint = PROPERTY_HINT_RESOURCE_TYPE,
+			usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_SCRIPT_VARIABLE,
+			hint_string = "Shader"
 		},
 		# Serialize these values without exposing it in the inspector
 		{
@@ -419,17 +452,19 @@ func _enter_tree() -> void:
 		var new_mesh_instance := MeshInstance.new()
 		new_mesh_instance.name = "RiverMeshInstance"
 		add_child(new_mesh_instance)
-		_mesh_instance = get_child(0) as MeshInstance
+		mesh_instance = get_child(0) as MeshInstance
 		_generate_river()
 	else:
-		_mesh_instance = get_child(0) as MeshInstance
-		_material = _mesh_instance.mesh.surface_get_material(0) as ShaderMaterial
+		mesh_instance = get_child(0) as MeshInstance
+		_material = mesh_instance.mesh.surface_get_material(0) as ShaderMaterial
 	
 	set_materials("valid_flowmap", valid_flowmap)
 	set_materials("distmap", _dist_pressure)
 	set_materials("flowmap", _flow_foam_noise)
 	# If a value is not set on the material, the values are not correct
-	set_albedo(mat_albedo) 
+	set_albedo1(mat_albedo[0])
+	set_albedo2(mat_albedo[1])
+	emit_signal("albedo_set", mat_albedo[0], mat_albedo[1])
 
 
 func _get_configuration_warning() -> String:
@@ -503,20 +538,21 @@ func set_materials(param : String, value) -> void:
 func set_debug_view(index : int) -> void:
 	debug_view = index
 	if index == 0:
-		_mesh_instance.material_override = null
+		mesh_instance.material_override = null
 	else:
 		_debug_material.set_shader_param("mode", index)
-		_mesh_instance.material_override =_debug_material
+		mesh_instance.material_override =_debug_material
 
 
 func spawn_mesh() -> void:
 	if owner == null:
 		push_warning("Cannot create MeshInstance sibling when River is root.")
 		return
-	var sibling_mesh := _mesh_instance.duplicate(true)
+	var sibling_mesh := mesh_instance.duplicate(true)
 	get_parent().add_child(sibling_mesh)
 	sibling_mesh.set_owner(get_tree().get_edited_scene_root())
 	sibling_mesh.translation = translation
+	sibling_mesh.material_override = null;
 
 
 func get_curve_points() -> PoolVector3Array:
@@ -571,9 +607,25 @@ func set_smoothness(value : float) -> void:
 	emit_signal("river_changed")
 
 
-func set_albedo(color : Color) -> void:
-	mat_albedo = color
-	set_materials("albedo", color)
+func set_albedo1(color : Color) -> void:
+	mat_albedo[0] = color
+	set_materials("albedo1", color)
+
+
+func set_albedo2(color : Color) -> void:
+	mat_albedo[1] = color
+	set_materials("albedo2", color)
+
+
+func set_albedo(colors : PoolColorArray) -> void:
+	set_albedo1(colors[0])
+	set_albedo2(colors[1])
+	emit_signal("albedo_set", colors)
+
+
+func set_gradient_depth(value : float) -> void:
+	mat_gradient_depth = value
+	set_materials("gradient_depth", value)
 
 
 func set_foam_albedo(color : Color) -> void:
@@ -597,13 +649,13 @@ func set_foam_smoothness(amount : float) -> void:
 
 
 func set_custom_shader(shader : Shader) -> void:
-	if mat_custom_shader == shader:
+	if adv_custom_shader == shader:
 		return
-	mat_custom_shader = shader
-	if mat_custom_shader == null:
+	adv_custom_shader = shader
+	if adv_custom_shader == null:
 		_material.shader = load(DEFAULT_SHADER_PATH)
 	else:
-		_material.shader = mat_custom_shader
+		_material.shader = adv_custom_shader
 		
 		if Engine.editor_hint:
 			# Ability to fork default shader
@@ -687,8 +739,8 @@ func _generate_river() -> void:
 	_steps = int( max(1.0, round(curve.get_baked_length() / average_width)) )
 	
 	var river_width_values := WaterHelperMethods.generate_river_width_values(curve, _steps, shape_step_length_divs, shape_step_width_divs, widths)
-	_mesh_instance.mesh = WaterHelperMethods.generate_river_mesh(curve, _steps, shape_step_length_divs, shape_step_width_divs, shape_smoothness, river_width_values)
-	_mesh_instance.mesh.surface_set_material(0, _material)
+	mesh_instance.mesh = WaterHelperMethods.generate_river_mesh(curve, _steps, shape_step_length_divs, shape_step_width_divs, shape_smoothness, river_width_values)
+	mesh_instance.mesh.surface_set_material(0, _material)
 
 
 func _generate_flowmap(flowmap_resolution : float) -> void:
@@ -702,7 +754,7 @@ func _generate_flowmap(flowmap_resolution : float) -> void:
 	yield(get_tree(), "idle_frame")
 	
 	image.lock()
-	image = yield(WaterHelperMethods.generate_collisionmap(image, _mesh_instance, baking_raycast_distance, _steps, shape_step_length_divs, shape_step_width_divs, self), "completed")
+	image = yield(WaterHelperMethods.generate_collisionmap(image, mesh_instance, baking_raycast_distance, baking_raycast_layers, _steps, shape_step_length_divs, shape_step_width_divs, self), "completed")
 	image.unlock()
 	
 	emit_signal("progress_notified", 0.95, "Applying filters (" + str(flowmap_resolution) + "x" + str(flowmap_resolution) + ")")
@@ -744,7 +796,7 @@ func _generate_flowmap(flowmap_resolution : float) -> void:
 	
 	var flow_pressure_map = yield(renderer_instance.apply_flow_pressure(collision_with_margins, flowmap_resolution, grid_side + 2.0), "completed")
 	var blurred_flow_pressure_map = yield(renderer_instance.apply_vertical_blur(flow_pressure_map, flow_pressure_blur_amount, flowmap_resolution), "completed")
-	var dilated_texture = yield(renderer_instance.apply_dilate(collision_with_margins, dilate_amount, flowmap_resolution), "completed")
+	var dilated_texture = yield(renderer_instance.apply_dilate(collision_with_margins, dilate_amount, 0.0, flowmap_resolution), "completed")
 	var normal_map = yield(renderer_instance.apply_normal(dilated_texture, flowmap_resolution), "completed")
 	var flow_map = yield(renderer_instance.apply_normal_to_flow(normal_map, flowmap_resolution), "completed")
 	var blurred_flow_map = yield(renderer_instance.apply_blur(flow_map, flowmap_blur_amount, flowmap_resolution), "completed")

@@ -1,26 +1,34 @@
-# Copyright © 2020 Kasper Arnklit Frandsen - MIT License
+# Copyright © 2021 Kasper Arnklit Frandsen - MIT License
 # See `LICENSE.md` included in the source distribution for details.
 tool
 extends EditorPlugin
 
 const WaterHelperMethods = preload("./water_helper_methods.gd")
+const WaterSystem = preload("./water_system_manager.gd")
 const RiverManager = preload("./river_manager.gd")
 const RiverGizmo = preload("./river_gizmo.gd")
+const GradientInspector = preload("./inspector_plugin.gd")
 const ProgressWindow = preload("./progress_window.tscn")
 
 var river_gizmo = RiverGizmo.new()
+var gradient_inspector = GradientInspector.new()
 
 var _river_controls = preload("./gui/river_controls.tscn").instance()
+var _water_system_controls = preload("./gui/water_system_controls.tscn").instance()
 var _edited_node = null
 var _progress_window = null
 var _editor_selection : EditorSelection = null
+var _heightmap_renderer = null
 var _mode := "select"
 var snap_to_colliders := false
 
 
 func _enter_tree() -> void:
-	add_custom_type("River", "Spatial", preload("./river_manager.gd"), preload("icon.svg"))
+	add_custom_type("River", "Spatial", preload("./river_manager.gd"), preload("./icons/river.svg"))
+	add_custom_type("WaterSystem", "Spatial", preload("./water_system_manager.gd"), preload("./icons/system.svg"))
+	add_custom_type("Buoyant", "Spatial", preload("./buoyant_manager.gd"), preload("./icons/buoyant.svg"))
 	add_spatial_gizmo_plugin(river_gizmo)
+	add_inspector_plugin(gradient_inspector)
 	river_gizmo.editor_plugin = self
 	_river_controls.connect("mode", self, "_on_mode_change")
 	_river_controls.connect("options", self, "_on_option_change")
@@ -33,12 +41,10 @@ func _enter_tree() -> void:
 
 
 func _on_generate_flowmap_pressed() -> void:
-	# set a working icon next to the river menu
 	_edited_node.bake_texture()
 
 
 func _on_generate_mesh_pressed() -> void:
-	# set a working icon next to the river menu
 	_edited_node.spawn_mesh()
 
 
@@ -46,24 +52,36 @@ func _on_debug_view_changed(index : int) -> void:
 	_edited_node.set_debug_view(index)
 
 
+func _on_generate_system_maps_pressed() -> void:
+	_edited_node.generate_system_maps()
+
+
 func _exit_tree() -> void:
 	remove_custom_type("River")
+	remove_custom_type("Water System")
+	remove_custom_type("Buoyant")
 	remove_spatial_gizmo_plugin(river_gizmo)
+	remove_inspector_plugin(gradient_inspector)
 	_river_controls.disconnect("mode", self, "_on_mode_change")
 	_river_controls.disconnect("options", self, "on_option_change")
 	_editor_selection.disconnect("selection_changed", self, "_on_selection_change")
 	disconnect("scene_changed", self, "_on_scene_changed");
 	disconnect("scene_closed", self, "_on_scene_closed");
-	_hide_control_panel()
+	_hide_river_control_panel()
+	_hide_water_system_control_panel()
 
 
 func handles(node):
-	return node is RiverManager
+	return node is RiverManager or node is WaterSystem
 
 
 func edit(node):
-	_show_control_panel()
-	_edited_node = node as RiverManager
+	if node is RiverManager:
+		_show_river_control_panel()
+		_edited_node = node as RiverManager
+	if node is WaterSystem:
+		_show_water_system_control_panel()
+		_edited_node = node as WaterSystem
 
 
 func _on_selection_change() -> void:
@@ -75,24 +93,24 @@ func _on_selection_change() -> void:
 		_river_controls.menu.debug_view_menu_selected = _edited_node.debug_view
 		if not _edited_node.is_connected("progress_notified", self, "_river_progress_notified"):
 			_edited_node.connect("progress_notified", self, "_river_progress_notified")
+		_hide_water_system_control_panel()
+	elif selected[0] is WaterSystem:
+		# TODO - is there anything we need to add here?
+		_hide_river_control_panel()
 	else:
 		_edited_node = null
-		if _river_controls.get_parent():
-			_hide_control_panel()
+		_hide_river_control_panel()
+		_hide_water_system_control_panel()
 
 
 func _on_scene_changed(scene_root : Node) -> void:
-	if _edited_node != null:
-		if _edited_node.owner == scene_root:
-			_show_control_panel()
-	else:
-		if _river_controls.get_parent():
-			_hide_control_panel()
+	_hide_river_control_panel()
+	_hide_water_system_control_panel()
 
 
 func _on_scene_closed(_value) -> void:
-	if _river_controls.get_parent():
-		_hide_control_panel()
+	_hide_river_control_panel()
+	_hide_water_system_control_panel()
 
 
 func _on_mode_change(mode) -> void:
@@ -233,7 +251,7 @@ func _river_progress_notified(progress : float, message : String) -> void:
 		_progress_window.show_progress(message, progress)
 
 
-func _show_control_panel() -> void:
+func _show_river_control_panel() -> void:
 	if not _river_controls.get_parent():
 		add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, _river_controls)
 		_river_controls.menu.connect("generate_flowmap", self, "_on_generate_flowmap_pressed")
@@ -241,9 +259,21 @@ func _show_control_panel() -> void:
 		_river_controls.menu.connect("debug_view_changed", self, "_on_debug_view_changed")
 
 
-func _hide_control_panel() -> void:
+func _hide_river_control_panel() -> void:
 	if _river_controls.get_parent():
 		remove_control_from_container(CONTAINER_SPATIAL_EDITOR_MENU, _river_controls)
 		_river_controls.menu.disconnect("generate_flowmap", self, "_on_generate_flowmap_pressed")
 		_river_controls.menu.disconnect("generate_mesh", self, "_on_generate_mesh_pressed")
 		_river_controls.menu.disconnect("debug_view_changed", self, "_on_debug_view_changed")
+
+
+func _show_water_system_control_panel() -> void:
+	if not _water_system_controls.get_parent():
+		add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, _water_system_controls)
+		_water_system_controls.menu.connect("generate_system_maps", self, "_on_generate_system_maps_pressed")
+
+
+func _hide_water_system_control_panel() -> void:
+	if _water_system_controls.get_parent():
+		remove_control_from_container(CONTAINER_SPATIAL_EDITOR_MENU, _water_system_controls)
+		_water_system_controls.menu.disconnect("generate_system_maps", self, "_on_generate_system_maps_pressed")

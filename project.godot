@@ -31,12 +31,6 @@ config/description="Demo project for Waterways add-on."
 run/main_scene="res://Demo.tscn"
 config/icon="res://icon.png"
 
-[display]
-
-window/size/width=1920
-window/size/height=1080
-window/size/resizable=false
-
 [editor_plugins]
 
 enabled=PoolStringArray( "waterways", "zylann.hterrain" )
@@ -74,4 +68,5 @@ ui_down={
 
 [rendering]
 
+quality/shadows/filter_mode=2
 quality/filters/msaa=2

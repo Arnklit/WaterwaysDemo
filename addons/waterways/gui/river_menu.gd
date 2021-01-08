@@ -1,4 +1,4 @@
-# Copyright © 2020 Kasper Arnklit Frandsen - MIT License
+# Copyright © 2021 Kasper Arnklit Frandsen - MIT License
 # See `LICENSE.md` included in the source distribution for details.
 tool
 extends MenuButton
@@ -22,11 +22,11 @@ func _enter_tree() -> void:
 	get_popup().clear()
 	get_popup().connect("id_pressed", self, "_menu_item_selected")
 	get_popup().add_item("Generate Flow & Foam Map")
+	get_popup().add_item("Generate MeshInstance Sibling")
 	_debug_view_menu = PopupMenu.new()
 	_debug_view_menu.name = "DebugViewMenu"
 	_debug_view_menu.connect("about_to_show", self, "_on_debug_view_menu_about_to_show")
 	_debug_view_menu.connect("id_pressed", self, "_debug_menu_item_selected")
-	get_popup().add_item("Generate MeshInstance Sibling")
 	get_popup().add_child(_debug_view_menu)
 	get_popup().add_submenu_item("Debug View", _debug_view_menu.name)
 
