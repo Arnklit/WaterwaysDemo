@@ -25,10 +25,21 @@ uniform float uv1_blend_sharpness;
 varying vec3 uv1_power_normal;
 uniform vec3 uv1_scale;
 uniform vec3 uv1_offset;
-varying vec3 vertex_trans;
-uniform float water_height = 0.0;
+varying vec3 world_vertex;
+uniform float wetness_offset = 0.0;
 uniform float wetness_transition_width = 1.0;
+uniform sampler2D water_systemmap;
+uniform mat4 water_systemmap_coords;
 
+float water_altitude(vec3 pos) {
+	vec3 pos_in_aabb = pos - water_systemmap_coords[0].xyz;
+	vec2 pos_2d = vec2(pos_in_aabb.x, pos_in_aabb.z);
+	float longest_side = water_systemmap_coords[1].x > water_systemmap_coords[1].z ? water_systemmap_coords[1].x : water_systemmap_coords[1].z;
+	pos_2d = pos_2d / longest_side;
+	float value = texture(water_systemmap, pos_2d).b;
+	float height = value * water_systemmap_coords[1].y + water_systemmap_coords[0].y;
+	return pos.y - (height + wetness_offset);
+}
 
 void vertex() {
 	TANGENT = vec3(0.0,0.0,-1.0) * abs(NORMAL.x);
@@ -43,7 +54,7 @@ void vertex() {
 	uv1_power_normal/=dot(uv1_power_normal,vec3(1.0));
 	uv1_triplanar_pos = VERTEX * uv1_scale + uv1_offset;
 	uv1_triplanar_pos *= vec3(1.0,-1.0, 1.0);
-	vertex_trans = (WORLD_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	world_vertex = (WORLD_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 
@@ -56,14 +67,16 @@ vec4 triplanar_texture(sampler2D p_sampler,vec3 p_weights,vec3 p_triplanar_pos) 
 }
 
 void fragment() {
-	float height = (clamp(vertex_trans.y - water_height + wetness_transition_width / 2.0, 0.0, wetness_transition_width) / wetness_transition_width);
+
+	float altitude = clamp(water_altitude(world_vertex) / wetness_transition_width, 0.0, 1.0);
+	
 	vec4 albedo_tex = triplanar_texture(texture_albedo,uv1_power_normal,uv1_triplanar_pos);
 	vec4 albedo_dark = albedo_tex * 0.80;
-	ALBEDO = mix(albedo_dark.rgb, albedo.rgb, height) * albedo_tex.rgb;
+	ALBEDO = mix(albedo_dark.rgb, albedo.rgb, altitude) * albedo_tex.rgb;
 	METALLIC = metallic;
 	float roughness_tex = dot(triplanar_texture(texture_roughness,uv1_power_normal,uv1_triplanar_pos),roughness_texture_channel);
 	float roughness_tex_dark = roughness_tex * 0.80;
-	ROUGHNESS = mix(roughness_tex_dark, roughness_tex, height) * roughness;
+	ROUGHNESS = mix(roughness_tex_dark, roughness_tex, altitude) * roughness;
 	SPECULAR = specular;
 	NORMALMAP = triplanar_texture(texture_normal,uv1_power_normal,uv1_triplanar_pos).rgb;
 	NORMALMAP_DEPTH = normal_scale;

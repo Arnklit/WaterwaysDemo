@@ -8,7 +8,9 @@ data = PoolVector3Array( 0.5945, 0.6068, -0.4294, 0.4406, 0.7434, -0.3218, 0.418
 
 [node name="smooth_rock" instance=ExtResource( 2 )]
 
-[node name="Cube" parent="." index="0"]
+[node name="Cube" parent="." index="0" groups=[
+"waterways_wet",
+]]
 material/0 = ExtResource( 1 )
 
 [node name="StaticBody" type="StaticBody" parent="Cube" index="0"]
