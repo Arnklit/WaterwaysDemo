@@ -9,6 +9,7 @@ const RiverManager = preload("./river_manager.gd")
 const RiverGizmo = preload("./river_gizmo.gd")
 const GradientInspector = preload("./inspector_plugin.gd")
 const ProgressWindow = preload("./progress_window.tscn")
+const RiverControls = preload("./gui/river_controls.gd")
 
 var river_gizmo = RiverGizmo.new()
 var gradient_inspector = GradientInspector.new()
@@ -20,7 +21,8 @@ var _progress_window = null
 var _editor_selection : EditorSelection = null
 var _heightmap_renderer = null
 var _mode := "select"
-var snap_to_colliders := false
+var constraint: int = RiverControls.CONSTRAINTS.NONE
+var local_editing := false
 
 
 func _enter_tree() -> void:
@@ -63,7 +65,7 @@ func _exit_tree() -> void:
 	remove_spatial_gizmo_plugin(river_gizmo)
 	remove_inspector_plugin(gradient_inspector)
 	_river_controls.disconnect("mode", self, "_on_mode_change")
-	_river_controls.disconnect("options", self, "on_option_change")
+	_river_controls.disconnect("options", self, "_on_option_change")
 	_editor_selection.disconnect("selection_changed", self, "_on_selection_change")
 	disconnect("scene_changed", self, "_on_scene_changed");
 	disconnect("scene_closed", self, "_on_scene_closed");
@@ -118,9 +120,12 @@ func _on_mode_change(mode) -> void:
 
 
 func _on_option_change(option, value) -> void:
-	snap_to_colliders = value
-	if snap_to_colliders:
-		WaterHelperMethods.reset_all_colliders(_edited_node.get_tree().root)
+	if option == "constraint":
+		constraint = value
+		if constraint == RiverControls.CONSTRAINTS.COLLIDERS:
+			WaterHelperMethods.reset_all_colliders(_edited_node.get_tree().root)
+	elif option == "local_mode":
+		local_editing = value
 
 
 func forward_spatial_gui_input(camera: Camera, event: InputEvent) -> bool:
@@ -178,31 +183,63 @@ func forward_spatial_gui_input(camera: Camera, event: InputEvent) -> bool:
 		# We'll use this closest point to add a point in between if on the line
 		# and to remove if close to a point
 		if _mode == "select":
+			if not event.pressed:
+				river_gizmo.reset()
 			return false
 		if _mode == "add" and not event.pressed:
 			# if we don't have a point on the line, we'll calculate a point
 			# based of a plane of the last point of the curve
 			if closest_segment == -1:
 				var end_pos = _edited_node.curve.get_point_position(_edited_node.curve.get_point_count() - 1)
-				var end_pos_global = _edited_node.to_global(end_pos)
+				var end_pos_global : Vector3 = _edited_node.to_global(end_pos)
+					
+				var z : Vector3 = _edited_node.curve.get_point_out(_edited_node.curve.get_point_count() - 1).normalized()
+				var x := z.cross(Vector3.DOWN).normalized()
+				var y := z.cross(x).normalized()
+				var _handle_base_transform = Transform(
+					Basis(x, y, z) * global_transform.basis,
+					end_pos_global
+				)
+			
 				var plane := Plane(end_pos_global, end_pos_global + camera.transform.basis.x, end_pos_global + camera.transform.basis.y)
 				var new_pos
-				if snap_to_colliders:
+				if constraint == RiverControls.CONSTRAINTS.COLLIDERS:
 					var space_state = _edited_node.get_world().direct_space_state
 					var result = space_state.intersect_ray(ray_from, ray_from + ray_dir * 4096)
 					if result:
 						new_pos = result.position
 					else:
 						return false
-				else:
+				elif constraint == RiverControls.CONSTRAINTS.NONE:
 					new_pos = plane.intersects_ray(ray_from, ray_from + ray_dir * 4096)
+				
+				elif constraint in RiverGizmo.AXIS_MAPPING:
+					var axis: Vector3 = RiverGizmo.AXIS_MAPPING[constraint]
+					if local_editing:
+						axis = _handle_base_transform.basis.xform(axis)
+					var axis_from = end_pos_global + (axis * RiverGizmo.AXIS_CONSTRAINT_LENGTH)
+					var axis_to = end_pos_global - (axis * RiverGizmo.AXIS_CONSTRAINT_LENGTH)
+					var ray_to = ray_from + (ray_dir * RiverGizmo.AXIS_CONSTRAINT_LENGTH)
+					var result = Geometry.get_closest_points_between_segments(axis_from, axis_to, ray_from, ray_to)
+					new_pos = result[0]
+				
+				elif constraint in RiverGizmo.PLANE_MAPPING:
+					var normal: Vector3 = RiverGizmo.PLANE_MAPPING[constraint]
+					if local_editing:
+						normal = _handle_base_transform.basis.xform(normal)
+					var projected := end_pos_global.project(normal)
+					var direction := sign(projected.dot(normal))
+					var distance := direction * projected.length()
+					plane = Plane(normal, distance)
+					new_pos = plane.intersects_ray(ray_from, ray_dir)
+						
 				baked_closest_point = _edited_node.to_local(new_pos)
 			
 			var ur := get_undo_redo()
 			ur.create_action("Add River point")
 			ur.add_do_method(_edited_node, "add_point", baked_closest_point, closest_segment)
 			ur.add_do_method(_edited_node, "properties_changed")
-			ur.add_do_method(_edited_node, "set_materials", "valid_flowmap", false)
+			ur.add_do_method(_edited_node, "set_materials", "i_valid_flowmap", false)
 			ur.add_do_property(_edited_node, "valid_flowmap", false)
 			ur.add_do_method(_edited_node, "update_configuration_warning")
 			if closest_segment == -1:
@@ -210,7 +247,7 @@ func forward_spatial_gui_input(camera: Camera, event: InputEvent) -> bool:
 			else:
 				ur.add_undo_method(_edited_node, "remove_point", closest_segment + 1)
 			ur.add_undo_method(_edited_node, "properties_changed")
-			ur.add_undo_method(_edited_node, "set_materials", "valid_flowmap", _edited_node.valid_flowmap)
+			ur.add_undo_method(_edited_node, "set_materials", "i_valid_flowmap", _edited_node.valid_flowmap)
 			ur.add_undo_property(_edited_node, "valid_flowmap", _edited_node.valid_flowmap)
 			ur.add_undo_method(_edited_node, "update_configuration_warning")
 			ur.commit_action()
@@ -224,7 +261,7 @@ func forward_spatial_gui_input(camera: Camera, event: InputEvent) -> bool:
 				ur.create_action("Remove River point")
 				ur.add_do_method(_edited_node, "remove_point", closest_index)
 				ur.add_do_method(_edited_node, "properties_changed")
-				ur.add_do_method(_edited_node, "set_materials", "valid_flowmap", false)
+				ur.add_do_method(_edited_node, "set_materials", "i_valid_flowmap", false)
 				ur.add_do_property(_edited_node, "valid_flowmap", false)
 				ur.add_do_method(_edited_node, "update_configuration_warning")
 				if closest_index == _edited_node.curve.get_point_count() - 1:
@@ -232,11 +269,20 @@ func forward_spatial_gui_input(camera: Camera, event: InputEvent) -> bool:
 				else:
 					ur.add_undo_method(_edited_node, "add_point", _edited_node.curve.get_point_position(closest_index), closest_index - 1, _edited_node.curve.get_point_out(closest_index), _edited_node.widths[closest_index])
 				ur.add_undo_method(_edited_node, "properties_changed")
-				ur.add_undo_method(_edited_node, "set_materials", "valid_flowmap", _edited_node.valid_flowmap)
+				ur.add_undo_method(_edited_node, "set_materials", "i_valid_flowmap", _edited_node.valid_flowmap)
 				ur.add_undo_property(_edited_node, "valid_flowmap", _edited_node.valid_flowmap)
 				ur.add_undo_method(_edited_node, "update_configuration_warning")
 				ur.commit_action()
 		return true
+	
+	elif _edited_node is RiverManager:
+		# Forward input to river controls. This is cleaner than handling
+		# the keybindings here as the keybindings need to interact with
+		# the buttons. Handling it here would expose more private details
+		# of the controls than needed, instead only the spatial_gui_input()
+		# method needs to be exposed.
+		return _river_controls.spatial_gui_input(event)
+	
 	return false
 
 

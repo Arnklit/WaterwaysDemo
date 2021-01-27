@@ -14,16 +14,21 @@ export(float, 0.0, 30.0) var water_resistance := 5.0
 
 var _rb : RigidBody
 var _system : WaterSystem
+var _default_linear_damp := -1.0
+var _default_angular_damp := -1.0
 
 
 func _enter_tree() -> void:
 	var parent = get_parent()
 	if parent is RigidBody:
 		_rb = parent as RigidBody
+		_default_linear_damp = _rb.linear_damp
+		_default_angular_damp = _rb.angular_damp
 
 
 func _exit_tree() -> void:
 	_rb = null
+
 
 func _ready() -> void:
 	var systems = get_tree().get_nodes_in_group(water_system_group_name)
@@ -42,6 +47,10 @@ func _get_rotation_correction() -> Vector3:
 	var rotation_transform := Transform()
 	var up_vector := global_transform.basis.y
 	var angle := up_vector.angle_to(Vector3.UP)
+	if angle < 0.1:
+		# Don't reaturn a rotation as object is almost upright, since the cross 
+		# product at an angle that small might cause precission errors.
+		return Vector3.ZERO
 	var cross := up_vector.cross(Vector3.UP).normalized()
 	rotation_transform = rotation_transform.rotated(cross, angle)
 	return rotation_transform.basis.get_euler()
@@ -60,6 +69,5 @@ func _physics_process(delta: float) -> void:
 		_rb.linear_damp = water_resistance
 		_rb.angular_damp = water_resistance
 	else:
-		_rb.linear_damp = -1
-		_rb.angular_damp = -1
-
+		_rb.linear_damp = _default_linear_damp
+		_rb.angular_damp = _default_angular_damp
